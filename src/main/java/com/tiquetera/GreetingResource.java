@@ -1,4 +1,4 @@
-package com.tiquetera.infrastructure.adapter.in.web;
+package com.tiquetera;
 
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
