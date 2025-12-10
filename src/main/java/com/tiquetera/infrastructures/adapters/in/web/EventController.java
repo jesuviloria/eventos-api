@@ -14,6 +14,7 @@ import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.*;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -45,12 +46,12 @@ public class EventController {
             Event event = toDomain(request);
             Event created = createEventUseCase.execute(event);
             return Response.status(Response.Status.CREATED)
-                .entity(toResponse(created))
-                .build();
+                    .entity(toResponse(created))
+                    .build();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.BAD_REQUEST)
-                .entity(Map.of("error", e.getMessage()))
-                .build();
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
         }
     }
 
@@ -58,13 +59,12 @@ public class EventController {
     @Operation(summary = "List events with pagination and filters")
     @APIResponse(responseCode = "200", description = "Events retrieved successfully")
     public Response findAll(
-        @QueryParam("page") @DefaultValue("0") int page,
-        @QueryParam("size") @DefaultValue("10") int size,
-        @QueryParam("sort") @DefaultValue("fechaInicio") String sort,
-        @QueryParam("ciudad") String ciudad,
-        @QueryParam("categoria") String categoria,
-        @QueryParam("venueId") Long venueId
-    ) {
+            @QueryParam("page") @DefaultValue("0") int page,
+            @QueryParam("size") @DefaultValue("10") int size,
+            @QueryParam("sort") @DefaultValue("fechaInicio") String sort,
+            @QueryParam("ciudad") String ciudad,
+            @QueryParam("categoria") String categoria,
+            @QueryParam("venueId") Long venueId) {
         List<Event> events;
         if (ciudad != null && !ciudad.isBlank()) {
             events = findEventUseCase.findByCiudad(ciudad, page, size);
@@ -77,8 +77,8 @@ public class EventController {
         }
 
         List<EventResponse> response = events.stream()
-            .map(this::toResponse)
-            .collect(Collectors.toList());
+                .map(this::toResponse)
+                .collect(Collectors.toList());
 
         return Response.ok(response).build();
     }
@@ -114,26 +114,69 @@ public class EventController {
 
     private Event toDomain(EventRequest request) {
         return Event.builder()
-            .nombre(request.getNombre())
-            .descripcion(request.getDescripcion())
-            .fechaInicio(request.getFechaInicio())
-            .fechaFin(request.getFechaFin())
-            .venueId(request.getVenueId())
-            .ciudad(request.getCiudad())
-            .categoria(request.getCategoria())
-            .build();
+                .nombre(request.getNombre())
+                .descripcion(request.getDescripcion())
+                .fechaInicio(request.getFechaInicio())
+                .fechaFin(request.getFechaFin())
+                .venueId(request.getVenueId())
+                .ciudad(request.getCiudad())
+                .categoria(request.getCategoria())
+                .build();
     }
 
     private EventResponse toResponse(Event event) {
         return EventResponse.builder()
-            .id(event.getId())
-            .nombre(event.getNombre())
-            .descripcion(event.getDescripcion())
-            .fechaInicio(event.getFechaInicio())
-            .fechaFin(event.getFechaFin())
-            .venueId(event.getVenueId())
-            .ciudad(event.getCiudad())
-            .categoria(event.getCategoria())
-            .build();
+                .id(event.getId())
+                .nombre(event.getNombre())
+                .descripcion(event.getDescripcion())
+                .fechaInicio(event.getFechaInicio())
+                .fechaFin(event.getFechaFin())
+                .venueId(event.getVenueId())
+                .ciudad(event.getCiudad())
+                .categoria(event.getCategoria())
+                .build();
+    }
+
+    @GET
+    @Path("/upcoming")
+    @Operation(summary = "Get upcoming events")
+    @APIResponse(responseCode = "200", description = "Upcoming events retrieved successfully")
+    public Response findUpcomingEvents() {
+        List<Event> events = findEventUseCase.findUpcomingEvents();
+        List<EventResponse> response = events.stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+        return Response.ok(response).build();
+    }
+
+    @GET
+    @Path("/search")
+    @Operation(summary = "Search events by city and category")
+    @APIResponse(responseCode = "200", description = "Events found")
+    public Response searchByCiudadAndCategoria(
+            @QueryParam("ciudad") @Parameter(description = "City name", required = true) String ciudad,
+            @QueryParam("categoria") @Parameter(description = "Category name", required = true) String categoria) {
+        List<Event> events = findEventUseCase.findByCiudadAndCategoria(ciudad, categoria);
+        List<EventResponse> response = events.stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+        return Response.ok(response).build();
+    }
+
+    @GET
+    @Path("/range")
+    @Operation(summary = "Find events in date range")
+    @APIResponse(responseCode = "200", description = "Events in range retrieved")
+    public Response findByDateRange(
+            @QueryParam("start") @Parameter(description = "Start date (ISO format)", required = true) String start,
+            @QueryParam("end") @Parameter(description = "End date (ISO format)", required = true) String end) {
+        LocalDateTime startDate = LocalDateTime.parse(start);
+        LocalDateTime endDate = LocalDateTime.parse(end);
+
+        List<Event> events = findEventUseCase.findByDateRange(startDate, endDate);
+        List<EventResponse> response = events.stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+        return Response.ok(response).build();
     }
 }

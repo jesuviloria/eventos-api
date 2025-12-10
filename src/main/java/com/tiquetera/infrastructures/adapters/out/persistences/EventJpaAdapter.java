@@ -13,6 +13,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -32,19 +33,15 @@ public class EventJpaAdapter implements EventRepositoryPort {
     @Override
     @Transactional
     public Event save(Event event) {
-        // Obtener el venue
         VenueEntity venueEntity = venueJpaRepository.findByIdOptional(event.getVenueId())
             .orElseThrow(() -> new IllegalArgumentException("Venue not found"));
         
-        // Convertir domain a entity
         EventEntity entity;
         
         if (event.getId() != null) {
-            // Update: buscar entidad existente
             entity = eventJpaRepository.findByIdOptional(event.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Event not found"));
             
-            // Actualizar campos
             entity.setNombre(event.getNombre());
             entity.setDescripcion(event.getDescripcion());
             entity.setFechaInicio(event.getFechaInicio());
@@ -53,7 +50,6 @@ public class EventJpaAdapter implements EventRepositoryPort {
             entity.setCategoria(event.getCategoria());
             entity.setVenue(venueEntity);
         } else {
-            // Create: nueva entidad
             entity = eventMapper.toEntity(event);
             entity.setVenue(venueEntity);
             eventJpaRepository.persist(entity);
@@ -125,5 +121,29 @@ public class EventJpaAdapter implements EventRepositoryPort {
     @Override
     public boolean existsById(Long id) {
         return eventJpaRepository.findByIdOptional(id).isPresent();
+    }
+
+    @Override
+    public List<Event> findUpcomingEvents() {
+        return eventJpaRepository.findUpcomingEvents()
+            .stream()
+            .map(eventMapper::toDomain)
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Event> findByCiudadAndCategoria(String ciudad, String categoria) {
+        return eventJpaRepository.findByCiudadAndCategoria(ciudad, categoria)
+            .stream()
+            .map(eventMapper::toDomain)
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Event> findByDateRange(LocalDateTime start, LocalDateTime end) {
+        return eventJpaRepository.findByDateRange(start, end)
+            .stream()
+            .map(eventMapper::toDomain)
+            .collect(Collectors.toList());
     }
 }

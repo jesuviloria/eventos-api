@@ -6,6 +6,8 @@ import com.tiquetera.domains.ports.out.EventRepositoryPort;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.NotFoundException;
+
+import java.time.LocalDateTime;
 import java.util.List;
 
 @ApplicationScoped
@@ -42,5 +44,20 @@ public class FindEventUseCaseImpl implements FindEventUseCase {
     @Override
     public List<Event> findByVenueId(Long venueId, int page, int size) {
         return eventRepository.findByVenueId(venueId, page, size);
+    }
+    
+    @Override
+    public List<Event> findUpcomingEvents() {
+        return eventRepository.findUpcomingEvents();
+    }
+    
+    @Override
+    public List<Event> findByCiudadAndCategoria(String ciudad, String categoria) {
+        return eventRepository.findByCiudadAndCategoria(ciudad, categoria);
+    }
+    
+    @Override
+    public List<Event> findByDateRange(LocalDateTime start, LocalDateTime end) {
+        return eventRepository.findByDateRange(start, end);
     }
 }
