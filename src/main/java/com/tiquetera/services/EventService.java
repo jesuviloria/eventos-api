@@ -1,111 +1,152 @@
 package com.tiquetera.services;
 
 import com.tiquetera.dtos.EventDTO;
+import com.tiquetera.entities.EventEntity;
+import com.tiquetera.entities.VenueEntity;
+import com.tiquetera.repositories.EventRepository;
+import com.tiquetera.repositories.VenueRepository;
+import io.quarkus.panache.common.Page;
+import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import jakarta.transaction.Transactional;
+import jakarta.ws.rs.NotFoundException;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class EventService {
     
-    private final Map<Long, EventDTO> events = new ConcurrentHashMap<>();
-    private final AtomicLong idGenerator = new AtomicLong(1);
+    @Inject
+    EventRepository eventRepository;
     
     @Inject
-    VenueService venueService;
+    VenueRepository venueRepository;
     
-    public EventDTO create(EventDTO event) {
-        // Validar que el venue existe
-        if (!venueService.existsById(event.getVenueId())) {
-            throw new IllegalArgumentException("El venue especificado no existe");
+    @Transactional
+    public EventDTO create(EventDTO dto) {
+        // Validate unique name
+        if (eventRepository.findByNombre(dto.getNombre()).isPresent()) {
+            throw new IllegalArgumentException("An event with this name already exists");
         }
         
-        // Validar nombre único
-        if (events.values().stream()
-                .anyMatch(e -> e.getNombre().equalsIgnoreCase(event.getNombre()))) {
-            throw new IllegalArgumentException("Ya existe un evento con ese nombre");
+        // Validate venue exists
+        VenueEntity venue = venueRepository.findByIdOptional(dto.getVenueId())
+            .orElseThrow(() -> new NotFoundException("Venue not found"));
+        
+        // Validate dates
+        if (dto.getFechaInicio().isAfter(dto.getFechaFin())) {
+            throw new IllegalArgumentException("Start date must be before end date");
         }
         
-        // Validar que fechaInicio < fechaFin
-        if (event.getFechaInicio().isAfter(event.getFechaFin())) {
-            throw new IllegalArgumentException("La fecha de inicio debe ser anterior a la fecha de fin");
+        EventEntity entity = EventEntity.builder()
+            .nombre(dto.getNombre())
+            .descripcion(dto.getDescripcion())
+            .fechaInicio(dto.getFechaInicio())
+            .fechaFin(dto.getFechaFin())
+            .venue(venue)
+            .ciudad(dto.getCiudad())
+            .categoria(dto.getCategoria())
+            .build();
+        
+        eventRepository.persist(entity);
+        return toDTO(entity);
+    }
+    
+    public List<EventDTO> findAll(int pageIndex, int pageSize, String sortBy) {
+        Sort sort = Sort.by(sortBy != null ? sortBy : "fechaInicio");
+        Page page = Page.of(pageIndex, pageSize);
+        
+        return eventRepository.findAll(sort)
+            .page(page)
+            .list()
+            .stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+    
+    public EventDTO findById(Long id) {
+        return eventRepository.findByIdOptional(id)
+            .map(this::toDTO)
+            .orElseThrow(() -> new NotFoundException("Event not found with id: " + id));
+    }
+    
+    public List<EventDTO> findByCiudad(String ciudad, int pageIndex, int pageSize) {
+        Page page = Page.of(pageIndex, pageSize);
+        return eventRepository.findByCiudad(ciudad, page, Sort.by("fechaInicio"))
+            .stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+    
+    public List<EventDTO> findByCategoria(String categoria, int pageIndex, int pageSize) {
+        Page page = Page.of(pageIndex, pageSize);
+        return eventRepository.findByCategoria(categoria, page, Sort.by("fechaInicio"))
+            .stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+    
+    public List<EventDTO> findByVenueId(Long venueId, int pageIndex, int pageSize) {
+        Page page = Page.of(pageIndex, pageSize);
+        return eventRepository.findByVenueId(venueId, page)
+            .stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+    
+    @Transactional
+    public EventDTO update(Long id, EventDTO dto) {
+        EventEntity entity = eventRepository.findByIdOptional(id)
+            .orElseThrow(() -> new NotFoundException("Event not found with id: " + id));
+        
+        // Validate unique name (excluding current event)
+        eventRepository.findByNombre(dto.getNombre())
+            .ifPresent(existing -> {
+                if (!existing.getId().equals(id)) {
+                    throw new IllegalArgumentException("Another event with this name already exists");
+                }
+            });
+        
+        // Validate venue exists
+        VenueEntity venue = venueRepository.findByIdOptional(dto.getVenueId())
+            .orElseThrow(() -> new NotFoundException("Venue not found"));
+        
+        // Validate dates
+        if (dto.getFechaInicio().isAfter(dto.getFechaFin())) {
+            throw new IllegalArgumentException("Start date must be before end date");
         }
         
-        event.setId(idGenerator.getAndIncrement());
+        entity.setNombre(dto.getNombre());
+        entity.setDescripcion(dto.getDescripcion());
+        entity.setFechaInicio(dto.getFechaInicio());
+        entity.setFechaFin(dto.getFechaFin());
+        entity.setVenue(venue);
+        entity.setCiudad(dto.getCiudad());
+        entity.setCategoria(dto.getCategoria());
         
-        // Agregar nombre del venue para la respuesta
-        venueService.findById(event.getVenueId())
-            .ifPresent(venue -> event.setVenueNombre(venue.getNombre()));
-        
-        events.put(event.getId(), event);
-        return event;
+        return toDTO(entity);
     }
     
-    public List<EventDTO> findAll() {
-        return new ArrayList<>(events.values());
-    }
-    
-    public Optional<EventDTO> findById(Long id) {
-        return Optional.ofNullable(events.get(id));
-    }
-    
-    public List<EventDTO> findByVenueId(Long venueId) {
-        return events.values().stream()
-                .filter(e -> e.getVenueId().equals(venueId))
-                .toList();
-    }
-    
-    public List<EventDTO> findByCiudad(String ciudad) {
-        return events.values().stream()
-                .filter(e -> e.getCiudad().equalsIgnoreCase(ciudad))
-                .toList();
-    }
-    
-    public List<EventDTO> findByCategoria(String categoria) {
-        return events.values().stream()
-                .filter(e -> e.getCategoria() != null && 
-                            e.getCategoria().equalsIgnoreCase(categoria))
-                .toList();
-    }
-    
-    public EventDTO update(Long id, EventDTO event) {
-        if (!events.containsKey(id)) {
-            throw new IllegalArgumentException("Evento no encontrado");
-        }
-        
-        // Validar que el venue existe
-        if (!venueService.existsById(event.getVenueId())) {
-            throw new IllegalArgumentException("El venue especificado no existe");
-        }
-        
-        // Validar nombre único (excluyendo el mismo evento)
-        if (events.values().stream()
-                .filter(e -> !e.getId().equals(id))
-                .anyMatch(e -> e.getNombre().equalsIgnoreCase(event.getNombre()))) {
-            throw new IllegalArgumentException("Ya existe otro evento con ese nombre");
-        }
-        
-        // Validar fechas
-        if (event.getFechaInicio().isAfter(event.getFechaFin())) {
-            throw new IllegalArgumentException("La fecha de inicio debe ser anterior a la fecha de fin");
-        }
-        
-        event.setId(id);
-        
-        // Agregar nombre del venue
-        venueService.findById(event.getVenueId())
-            .ifPresent(venue -> event.setVenueNombre(venue.getNombre()));
-        
-        events.put(id, event);
-        return event;
-    }
-    
+    @Transactional
     public void delete(Long id) {
-        if (!events.containsKey(id)) {
-            throw new IllegalArgumentException("Evento no encontrado");
+        if (!eventRepository.deleteById(id)) {
+            throw new NotFoundException("Event not found with id: " + id);
         }
-        events.remove(id);
+    }
+    
+    private EventDTO toDTO(EventEntity entity) {
+        return EventDTO.builder()
+            .id(entity.getId())
+            .nombre(entity.getNombre())
+            .descripcion(entity.getDescripcion())
+            .fechaInicio(entity.getFechaInicio())
+            .fechaFin(entity.getFechaFin())
+            .venueId(entity.getVenue().getId())
+            .venueNombre(entity.getVenue().getNombre())
+            .ciudad(entity.getCiudad())
+            .categoria(entity.getCategoria())
+            .build();
     }
 }
