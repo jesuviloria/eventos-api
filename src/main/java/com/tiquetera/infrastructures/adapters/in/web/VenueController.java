@@ -7,16 +7,21 @@ import com.tiquetera.domains.ports.in.FindVenueUseCase;
 import com.tiquetera.domains.ports.in.UpdateVenueUseCase;
 import com.tiquetera.infrastructures.adapters.in.web.dtos.VenueRequest;
 import com.tiquetera.infrastructures.adapters.in.web.dtos.VenueResponse;
+import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.List;
@@ -26,7 +31,14 @@ import java.util.stream.Collectors;
 @Path("/api/v1/venues")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@Tag(name = "Venues", description = "Venue management operations (Hexagonal Architecture)")
+@Tag(name = "Venues", description = "Venue management operations (Secured)")
+@SecurityScheme(
+    securitySchemeName = "jwt",
+    type = SecuritySchemeType.HTTP,
+    scheme = "bearer",
+    bearerFormat = "JWT"
+)
+@SecurityRequirement(name = "jwt")
 public class VenueController {
 
     @Inject
@@ -42,13 +54,20 @@ public class VenueController {
     DeleteVenueUseCase deleteVenueUseCase;
 
     @POST
-    @Operation(summary = "Create a new venue")
+    @RolesAllowed({"ADMIN"})
+    @Operation(
+        summary = "Create a new venue (ADMIN only)",
+        description = "Creates a new venue in the system. Only users with ADMIN role can perform this operation."
+    )
     @APIResponse(
         responseCode = "201",
         description = "Venue created successfully",
         content = @Content(schema = @Schema(implementation = VenueResponse.class))
     )
     @APIResponse(responseCode = "400", description = "Invalid data or business rule violation")
+    @APIResponse(responseCode = "401", description = "Unauthorized - Invalid or missing JWT token")
+    @APIResponse(responseCode = "403", description = "Forbidden - Requires ADMIN role")
+    @APIResponse(responseCode = "409", description = "Conflict - Venue with same name already exists")
     public Response create(@Valid VenueRequest request) {
         try {
             Venue venue = toDomain(request);
@@ -64,7 +83,11 @@ public class VenueController {
     }
 
     @GET
-    @Operation(summary = "List venues with pagination and filters")
+    @PermitAll
+    @Operation(
+        summary = "List venues with pagination and filters (Public)",
+        description = "Returns a paginated list of venues. This endpoint is public and doesn't require authentication."
+    )
     @APIResponse(
         responseCode = "200",
         description = "Venues retrieved successfully",
@@ -73,23 +96,29 @@ public class VenueController {
     public Response findAll(
         @QueryParam("page")
         @DefaultValue("0")
-        @Parameter(description = "Page number") int page,
+        @Parameter(description = "Page number (0-based)", example = "0") 
+        int page,
 
         @QueryParam("size")
         @DefaultValue("10")
-        @Parameter(description = "Page size") int size,
+        @Parameter(description = "Number of items per page", example = "10") 
+        int size,
 
         @QueryParam("sort")
         @DefaultValue("nombre")
-        @Parameter(description = "Sort field") String sort,
+        @Parameter(description = "Sort field (nombre, ciudad, capacidad)", example = "nombre") 
+        String sort,
 
         @QueryParam("ciudad")
-        @Parameter(description = "Filter by city") String ciudad,
+        @Parameter(description = "Filter by city name", example = "Bogotá") 
+        String ciudad,
 
         @QueryParam("capacidadMinima")
-        @Parameter(description = "Filter by minimum capacity") Integer capacidadMinima
+        @Parameter(description = "Filter by minimum capacity", example = "5000") 
+        Integer capacidadMinima
     ) {
         List<Venue> venues;
+        
         if (ciudad != null && !ciudad.isBlank()) {
             venues = findVenueUseCase.findByCiudad(ciudad, page, size);
         } else if (capacidadMinima != null) {
@@ -107,7 +136,11 @@ public class VenueController {
 
     @GET
     @Path("/{id}")
-    @Operation(summary = "Get venue by ID")
+    @PermitAll
+    @Operation(
+        summary = "Get venue by ID (Public)",
+        description = "Returns detailed information about a specific venue. Public endpoint."
+    )
     @APIResponse(
         responseCode = "200",
         description = "Venue found",
@@ -116,7 +149,8 @@ public class VenueController {
     @APIResponse(responseCode = "404", description = "Venue not found")
     public Response findById(
         @PathParam("id")
-        @Parameter(description = "Venue ID", required = true) Long id
+        @Parameter(description = "Venue ID", required = true, example = "1") 
+        Long id
     ) {
         Venue venue = findVenueUseCase.findById(id);
         return Response.ok(toResponse(venue)).build();
@@ -124,16 +158,25 @@ public class VenueController {
 
     @PUT
     @Path("/{id}")
-    @Operation(summary = "Update venue")
+    @RolesAllowed({"ADMIN"})
+    @Operation(
+        summary = "Update venue (ADMIN only)",
+        description = "Updates an existing venue. Only users with ADMIN role can perform this operation."
+    )
     @APIResponse(
         responseCode = "200",
         description = "Venue updated successfully",
         content = @Content(schema = @Schema(implementation = VenueResponse.class))
     )
+    @APIResponse(responseCode = "400", description = "Invalid data")
+    @APIResponse(responseCode = "401", description = "Unauthorized - Invalid or missing JWT token")
+    @APIResponse(responseCode = "403", description = "Forbidden - Requires ADMIN role")
     @APIResponse(responseCode = "404", description = "Venue not found")
+    @APIResponse(responseCode = "409", description = "Conflict - Another venue with same name exists")
     public Response update(
         @PathParam("id")
-        @Parameter(description = "Venue ID", required = true) Long id,
+        @Parameter(description = "Venue ID", required = true, example = "1") 
+        Long id,
         @Valid VenueRequest request
     ) {
         Venue toUpdate = toDomain(request);
@@ -143,17 +186,27 @@ public class VenueController {
 
     @DELETE
     @Path("/{id}")
-    @Operation(summary = "Delete venue")
+    @RolesAllowed({"ADMIN"})
+    @Operation(
+        summary = "Delete venue (ADMIN only)",
+        description = "Deletes a venue from the system. Only users with ADMIN role can perform this operation. " +
+                     "This will also delete all events associated with this venue (cascade delete)."
+    )
     @APIResponse(responseCode = "204", description = "Venue deleted successfully")
+    @APIResponse(responseCode = "401", description = "Unauthorized - Invalid or missing JWT token")
+    @APIResponse(responseCode = "403", description = "Forbidden - Requires ADMIN role")
     @APIResponse(responseCode = "404", description = "Venue not found")
     public Response delete(
         @PathParam("id")
-        @Parameter(description = "Venue ID", required = true) Long id
+        @Parameter(description = "Venue ID", required = true, example = "1") 
+        Long id
     ) {
         deleteVenueUseCase.execute(id);
         return Response.noContent().build();
     }
 
+    // Mapper methods
+    
     private Venue toDomain(VenueRequest request) {
         return Venue.builder()
             .nombre(request.getNombre())
