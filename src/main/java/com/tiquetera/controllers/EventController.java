@@ -32,11 +32,11 @@ public class EventController {
         return Response.status(Response.Status.CREATED).entity(created).build();
     }
 
-    @GET
-    @Operation(summary = "Listar todos los eventos")
-    public Response findAll() {
-        return Response.ok(eventService.findAll()).build();
-    }
+    // @GET
+    // @Operation(summary = "Listar todos los eventos")
+    // public Response findAll() {
+    //     return Response.ok(eventService.findAll()).build();
+    // }
 
     @GET
     @Path("/{id}")
